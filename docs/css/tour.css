@@ -1,0 +1,127 @@
+/* ------------------------------------------------------------------
+   Guided product tour: spotlight cutout + popover.
+   ------------------------------------------------------------------ */
+
+.tour-open { overflow: hidden; }
+
+#tour-spot {
+  position: absolute;
+  z-index: 9998;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.58);
+  pointer-events: none;
+  transition: top 0.32s cubic-bezier(.4,0,.2,1), left 0.32s cubic-bezier(.4,0,.2,1),
+              width 0.32s cubic-bezier(.4,0,.2,1), height 0.32s cubic-bezier(.4,0,.2,1);
+}
+
+#tour-spot::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border-radius: 12px;
+  border: 2px solid var(--primary);
+  opacity: 0.9;
+}
+
+#tour-pop {
+  position: absolute;
+  z-index: 9999;
+  width: 384px;
+  max-width: calc(100vw - 32px);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28), 0 2px 8px rgba(15, 23, 42, 0.12);
+  padding: 20px 22px 18px;
+  font-family: var(--font-content);
+  transition: top 0.32s cubic-bezier(.4,0,.2,1), left 0.32s cubic-bezier(.4,0,.2,1);
+}
+
+#tour-pop .step {
+  font-family: var(--font-chrome);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--primary-dark);
+  margin-bottom: 6px;
+}
+
+#tour-pop h3 {
+  font-family: var(--font-content);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 0 0 8px;
+  color: var(--text);
+}
+
+#tour-pop p {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: #4b5563;
+  margin: 0 0 14px;
+}
+
+#tour-pop p strong { color: var(--text); }
+
+#tour-pop .tour-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#tour-pop .dots { display: flex; gap: 5px; flex: 1; flex-wrap: wrap; }
+#tour-pop .dots i {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #d7dbe3; display: block;
+}
+#tour-pop .dots i.on { background: var(--primary); }
+
+#tour-pop button {
+  font-family: var(--font-chrome);
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 9px 14px;
+  cursor: pointer;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  color: rgba(26, 26, 26, 0.85);
+}
+#tour-pop button:hover { border-color: var(--primary); color: var(--primary-dark); }
+#tour-pop button.primary {
+  background: var(--primary); border-color: var(--primary); color: #fff;
+}
+#tour-pop button.primary:hover { background: var(--primary-dark); border-color: var(--primary-dark); color: #fff; }
+#tour-pop button.ghost { border-color: transparent; color: var(--text-faded); padding-left: 4px; padding-right: 4px; }
+#tour-pop button.ghost:hover { color: var(--text); }
+
+#tour-pop .arrow {
+  position: absolute;
+  width: 14px; height: 14px;
+  background: #fff;
+  transform: rotate(45deg);
+}
+
+/* Floating "resume tour" pill once dismissed */
+#tour-fab {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 9997;
+  background: var(--primary);
+  color: #fff;
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 20px;
+  font-family: var(--font-chrome);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(58, 189, 175, 0.4);
+}
+#tour-fab:hover { background: var(--primary-dark); }
+
+@media (max-width: 900px) {
+  #tour-pop { width: calc(100vw - 32px); left: 16px !important; }
+}

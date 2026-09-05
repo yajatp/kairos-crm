@@ -1,0 +1,8 @@
+.env
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+.DS_Store
+.venv/
+graphify-out/
+CHAT_TRANSCRIPT.md

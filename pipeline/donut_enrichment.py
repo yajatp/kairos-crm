@@ -1,0 +1,546 @@
+from __future__ import annotations
+
+import json
+import logging
+import re
+import time
+from urllib.parse import urljoin, urlparse
+
+import requests
+from bs4 import BeautifulSoup
+
+from pipeline.classifier import classify_clinic
+from pipeline.website import _EMAIL_NOISE
+
+logger = logging.getLogger(__name__)
+
+_CREDENTIAL_RE = re.compile(
+    r'(?:Dr\.?\s+)?'
+    r'([A-Z][a-zA-Z\'-]+(?:\s+[A-Z]\.?\s*)?[A-Z][a-zA-Z\'-]+)'
+    r'\s*,?\s+'
+    r'(D\.?D\.?S\.?|D\.?M\.?D\.?)',
+)
+
+_EMAIL_RE = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
+_MAILTO_RE = re.compile(r'mailto:([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})', re.IGNORECASE)
+
+_TEAM_PAGE_KEYWORDS = ["about", "team", "doctor", "meet", "staff", "bio", "dr", "provider", "dentist"]
+
+_MIN_VISIBLE_TEXT_LEN = 300
+
+
+def _get_visible_text(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "noscript", "head"]):
+        tag.decompose()
+    return " ".join(soup.get_text(separator=" ").split())
+
+
+def _score_url_for_team(url: str) -> int:
+    path = urlparse(url).path.lower()
+    return sum(1 for kw in _TEAM_PAGE_KEYWORDS if kw in path)
+
+
+def _fetch_page(url: str) -> tuple[str, str]:
+    """Returns (html, visible_text)."""
+    try:
+        resp = requests.get(
+            url,
+            timeout=4,
+            headers={"User-Agent": "Mozilla/5.0"},
+            allow_redirects=True,
+        )
+        html = resp.text
+    except Exception as e:
+        logger.debug("requests fetch failed for %s: %s", url, e)
+        return "", ""
+
+    text = _get_visible_text(html)
+    return html, text
+
+
+def _extract_internal_links(html: str, base_url: str) -> list[str]:
+    soup = BeautifulSoup(html, "html.parser")
+    base_domain = urlparse(base_url).netloc
+    links: list[str] = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"].strip()
+        if href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
+            continue
+        full = urljoin(base_url, href)
+        if urlparse(full).netloc == base_domain:
+            links.append(full)
+    return list(dict.fromkeys(links))
+
+
+_COMMON_TEAM_SLUGS = [
+    "about", "about-us", "team", "our-team", "meet-the-doctor", "meet-the-team",
+    "meet-our-doctors", "doctors", "our-dentist", "staff", "providers",
+]
+
+
+def _scrape_clinic_pages(website_url: str) -> tuple[str, str, str]:
+    """
+    Returns (combined_text, email, diagnostic).
+
+    diagnostic explains *why* enrichment had nothing to work with when it comes
+    back thin — "fetch failed", "page too thin (likely JS-rendered)", or "" for
+    a normal successful scrape — so notes can say why a gap wasn't filled instead
+    of looking like enrichment silently did nothing.
+    """
+    homepage_html, homepage_text = _fetch_page(website_url)
+    if not homepage_html:
+        return "", "", "Website unreachable — could not fetch homepage."
+
+    raw_emails = _MAILTO_RE.findall(homepage_html) + _EMAIL_RE.findall(homepage_html.lower())
+    email = ""
+    for e in dict.fromkeys(raw_emails):
+        if not any(noise in e.lower() for noise in _EMAIL_NOISE):
+            email = e.lower()
+            break
+
+    links = _extract_internal_links(homepage_html, website_url)
+    scored = sorted(
+        [(url, _score_url_for_team(url)) for url in links if _score_url_for_team(url) > 0],
+        key=lambda x: -x[1],
+    )
+    top_urls = [u for u, _ in scored[:2]]
+
+    # No team/about link discovered on the homepage — common when nav is
+    # client-side rendered and never lands in the raw HTML `requests` sees.
+    # Guess the standard slugs directly rather than giving up on the homepage alone.
+    if not top_urls:
+        for slug in _COMMON_TEAM_SLUGS:
+            guess = urljoin(website_url if website_url.endswith("/") else website_url + "/", slug)
+            _, page_text = _fetch_page(guess)
+            if page_text and len(page_text) > _MIN_VISIBLE_TEXT_LEN:
+                top_urls.append(guess)
+            if len(top_urls) >= 2:
+                break
+
+    all_texts = [homepage_text]
+    for url in top_urls:
+        _, page_text = _fetch_page(url)
+        if page_text:
+            all_texts.append(page_text)
+
+    combined = " ".join(all_texts)
+    diagnostic = ""
+    if len(combined) < _MIN_VISIBLE_TEXT_LEN:
+        diagnostic = "Website content too thin to extract from — likely a JS-rendered site our fetch can't see past."
+
+    return combined, email, diagnostic
+
+
+def _extract_dentist_regex(text: str) -> dict:
+    matches = _CREDENTIAL_RE.findall(text)
+    if not matches:
+        return {"name": None, "credential": None}
+    name, cred = matches[0]
+    return {"name": name.strip(), "credential": cred.strip()}
+
+
+def _call_gemini_structured(prompt: str, schema: dict, api_key: str, retries: int = 3) -> dict | list:
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        raise ImportError("google-genai not installed")
+
+    client = genai.Client(api_key=api_key)
+    config = types.GenerateContentConfig(
+        response_mime_type="application/json",
+        response_schema=schema,
+    )
+
+    # gemini-3.1-flash-lite does not exist — it was never a real Gemini model id
+    # and every call to it 404'd, silently falling through to 2.5-flash-lite. Use
+    # the real model directly so enrichment isn't burning a request per clinic on
+    # a call that's guaranteed to fail.
+    models_to_try = ["gemini-2.5-flash-lite", "gemini-1.5-flash-lite"]
+
+    last_error: Exception | None = None
+    for model_name in models_to_try:
+        for attempt in range(retries):
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=config,
+                )
+                return json.loads(response.text)
+            except Exception as e:
+                err = str(e)
+                last_error = e
+                if "404" in err or "NOT_FOUND" in err or "NotFound" in err:
+                    logger.warning("Gemini model %s unavailable (404), trying next fallback", model_name)
+                    break
+                elif "429" in err and attempt < retries - 1:
+                    m = re.search(r"retry in (\d+)", err)
+                    wait = int(m.group(1)) + 2 if m else 65
+                    time.sleep(wait)
+                elif attempt == retries - 1 and model_name != models_to_try[-1]:
+                    break
+                else:
+                    raise
+    raise RuntimeError(f"All Gemini models failed: {last_error}")
+
+
+_INDEPENDENT_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "head_dentist": {
+            "type": "OBJECT",
+            "properties": {
+                "name": {"type": "STRING"},
+                "credential": {"type": "STRING"},
+                "role": {"type": "STRING"},
+                "confidence": {"type": "STRING"},
+            },
+        },
+        "email": {
+            "type": "OBJECT",
+            "properties": {
+                "address": {"type": "STRING"},
+                "confidence": {"type": "STRING"},
+            },
+        },
+    },
+}
+
+_DSO_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "staff": {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "name": {"type": "STRING"},
+                    "role": {"type": "STRING"},
+                    "is_location_specific": {"type": "BOOLEAN"},
+                    "confidence": {"type": "STRING"},
+                },
+            },
+        },
+        "email": {
+            "type": "OBJECT",
+            "properties": {
+                "address": {"type": "STRING"},
+                "confidence": {"type": "STRING"},
+            },
+        },
+    },
+}
+
+_ROLE_PRIORITY = {
+    "owner": 0,
+    "lead dentist": 1,
+    "head dentist": 1,
+    "office manager": 2,
+    "practice manager": 2,
+    "associate dentist": 3,
+    "associate": 3,
+    "dentist": 3,
+}
+
+
+def _role_rank(role: str) -> int:
+    r = role.lower()
+    for key, rank in _ROLE_PRIORITY.items():
+        if key in r:
+            return rank
+    return 99
+
+
+def _confidence_rank(confidence: str) -> int:
+    return {"high": 0, "medium": 1, "low": 2}.get(confidence.lower(), 3)
+
+
+def _merge_dentists(clinic: dict, new_dentist_str: str, source: str) -> None:
+    if not new_dentist_str:
+        return
+        
+    existing = clinic.get("head_dentist", "")
+    existing_src = clinic.get("staff_source", "")
+    
+    if not existing:
+        clinic["head_dentist"] = new_dentist_str
+        clinic["staff_source"] = source
+        return
+        
+    # Deduplicate
+    existing_parts = [p.strip() for p in existing.split(";") if p.strip()]
+    new_parts = [p.strip() for p in new_dentist_str.split(";") if p.strip()]
+    
+    def _norm(n: str) -> str:
+        s = re.sub(r"^dr\.?\s+", "", n, flags=re.IGNORECASE)
+        s = re.sub(r",?\s*(?:DDS|DMD|MD|DO|PhD|MS|FAGD|FICD|FACD|DABP|FACS)\b", "", s, flags=re.IGNORECASE)
+        s = re.sub(r"\b[A-Z]\.", "", s)
+        s = re.sub(r"\s+\([^)]+\)", "", s) # remove appended roles like (Dentist)
+        return re.sub(r"\s+", " ", s).strip().lower()
+        
+    seen = {_norm(p) for p in existing_parts}
+    added = False
+    for p in new_parts:
+        if _norm(p) not in seen:
+            existing_parts.append(p)
+            seen.add(_norm(p))
+            added = True
+            
+    if added:
+        clinic["head_dentist"] = "; ".join(existing_parts)
+        if existing_src and existing_src != "Not Found":
+            clinic["staff_source"] = f"{existing_src} + {source}"
+        else:
+            clinic["staff_source"] = source
+    else:
+        # confirmed by the new source
+        if "Confirmed" not in existing_src:
+            clinic["staff_source"] = f"{existing_src} (Confirmed by {source})"
+
+
+def _extract_independent(clinic: dict, text: str, gemini_key: str) -> None:
+    regex_result = _extract_dentist_regex(text)
+    existing = clinic.get("head_dentist", "")
+
+    if not gemini_key:
+        if regex_result["name"]:
+            new_doc = (
+                f"{regex_result['name']}, {regex_result['credential']}"
+                if regex_result["credential"]
+                else regex_result["name"]
+            )
+            _merge_dentists(clinic, new_doc, "Regex")
+        elif not existing:
+            clinic["head_dentist"] = ""
+            clinic["staff_source"] = "Not Found"
+        return
+
+    prompt = (
+        "You are analyzing dental practice website text to identify the head/owner dentist "
+        "and contact email. Return null for any field you cannot find with confidence.\n\n"
+    )
+    if existing:
+        prompt += f"Note: We already identified '{existing}' from business listings. Confirm this or add missing credentials, and find any other primary dentists.\n\n"
+
+    prompt += (
+        "Text (truncated to 4000 chars):\n"
+        f"{text[:4000]}\n\n"
+        "Return the head dentist (owner or primary dentist, not an associate), their credential, "
+        "role (owner/associate/unclear), confidence (high/medium/low), and email if present."
+    )
+
+    clinic["_gemini_calls"] = clinic.get("_gemini_calls", 0) + 1
+    try:
+        result = _call_gemini_structured(prompt, _INDEPENDENT_SCHEMA, gemini_key)
+        dentist = result.get("head_dentist", {})
+        name = dentist.get("name") or ""
+        cred = dentist.get("credential") or ""
+        confidence = dentist.get("confidence", "low")
+
+        if name:
+            new_doc = f"{name}, {cred}".rstrip(", ") if cred else name
+            _merge_dentists(clinic, new_doc, f"Gemini ({confidence})")
+        elif not existing:
+            clinic["head_dentist"] = ""
+            clinic["staff_source"] = "Not Found"
+
+        if not clinic.get("email"):
+            email_info = result.get("email", {})
+            addr = email_info.get("address") or ""
+            if addr and "@" in addr and not any(n in addr.lower() for n in _EMAIL_NOISE):
+                clinic["email"] = addr.lower()
+                clinic["email_source"] = f"Gemini ({email_info.get('confidence', 'low')})"
+    except Exception as e:
+        logger.warning("Gemini extraction failed for %s: %s", clinic.get("name"), e)
+        if not existing:
+            clinic["head_dentist"] = ""
+            clinic["staff_source"] = "Not Found"
+
+
+def _extract_dso(clinic: dict, text: str, gemini_key: str) -> None:
+    existing = clinic.get("head_dentist", "")
+    if not gemini_key:
+        if not existing:
+            clinic["head_dentist"] = ""
+            clinic["staff_source"] = "Not Found"
+        return
+
+    prompt = (
+        "You are analyzing a DSO/chain dental location's website text. "
+        "Extract every named staff member found — dentists, office manager, etc. "
+        "Focus on people plausibly present at this physical location. "
+        "Exclude regional/corporate titles (Regional VP, District Manager, etc.).\n\n"
+    )
+    if existing:
+        prompt += f"Note: We already identified '{existing}' from business listings. Confirm this and find any others.\n\n"
+        
+    prompt += (
+        "Text (truncated to 4000 chars):\n"
+        f"{text[:4000]}\n\n"
+        "For each person: name, role, is_location_specific (true/false), confidence (high/medium/low). "
+        "Also extract a contact email if present."
+    )
+
+    clinic["_gemini_calls"] = clinic.get("_gemini_calls", 0) + 1
+    try:
+        result = _call_gemini_structured(prompt, _DSO_SCHEMA, gemini_key)
+        staff = result.get("staff", [])
+
+        if not staff:
+            if not existing:
+                clinic["head_dentist"] = ""
+                clinic["staff_source"] = "Not Found"
+            return
+
+        # Filter to location-specific, sort by role seniority then confidence
+        local_staff = [s for s in staff if s.get("is_location_specific", True)]
+        if not local_staff:
+            local_staff = staff
+
+        local_staff.sort(
+            key=lambda s: (
+                _role_rank(s.get("role", "")),
+                _confidence_rank(s.get("confidence", "low")),
+            )
+        )
+
+        # Keep top entries: high-confidence first, cap at 4 unless all are strong
+        surfaced = [s for s in local_staff if s.get("confidence") in ("high", "medium")][:4]
+        if not surfaced:
+            surfaced = local_staff[:2]
+
+        parts = [
+            f"{s['name']} ({s.get('role', 'Staff')})"
+            for s in surfaced
+            if s.get("name")
+        ]
+        
+        if parts:
+            _merge_dentists(clinic, "; ".join(parts), "Gemini")
+        elif not existing:
+            clinic["head_dentist"] = ""
+            clinic["staff_source"] = "Not Found"
+
+        if not clinic.get("email"):
+            email_info = result.get("email", {})
+            addr = email_info.get("address") or ""
+            if addr and "@" in addr and not any(n in addr.lower() for n in _EMAIL_NOISE):
+                clinic["email"] = addr.lower()
+                clinic["email_source"] = f"Gemini ({email_info.get('confidence', 'low')})"
+    except Exception as e:
+        logger.warning("Gemini DSO extraction failed for %s: %s", clinic.get("name"), e)
+        if not existing:
+            clinic["head_dentist"] = ""
+            clinic["staff_source"] = "Not Found"
+
+
+from pipeline.gemini_enrichment_prompt import (
+    GEMINI_ENRICHMENT_SCHEMA,
+    build_enrichment_prompt,
+)
+
+
+def _enrich_with_gemini(clinic: dict, all_text: str, gemini_key: str) -> None:
+    """Use Gemini Gap-Filling System Prompt to extract email, head dentist, phone, and classification."""
+    if not gemini_key:
+        return
+
+    prompt = build_enrichment_prompt(clinic, website_text=all_text)
+    clinic["_gemini_calls"] = clinic.get("_gemini_calls", 0) + 1
+
+    try:
+        result = _call_gemini_structured(prompt, GEMINI_ENRICHMENT_SCHEMA, gemini_key)
+        if not isinstance(result, dict):
+            return
+
+        # 1. Head Dentist / Owner
+        doc_name = result.get("head_dentist_name") or ""
+        doc_cred = result.get("head_dentist_credential") or ""
+        confidence = result.get("confidence", "medium")
+
+        if doc_name:
+            full_doc = f"{doc_name}, {doc_cred}".rstrip(", ") if doc_cred else doc_name
+            _merge_dentists(clinic, full_doc, f"Gemini ({confidence})")
+        elif not clinic.get("head_dentist"):
+            clinic["head_dentist"] = ""
+            clinic["staff_source"] = "Not Found"
+
+        # 2. Email Gap-Filling
+        if not clinic.get("email"):
+            extracted_email = result.get("email") or ""
+            if extracted_email and "@" in extracted_email and not any(n in extracted_email.lower() for n in _EMAIL_NOISE):
+                clinic["email"] = extracted_email.lower()
+                clinic["email_source"] = f"Gemini ({confidence})"
+
+        # 3. Phone Gap-Filling
+        if not clinic.get("phone"):
+            extracted_phone = result.get("phone") or ""
+            if extracted_phone:
+                clinic["phone"] = extracted_phone
+
+        # 4. Classification update
+        extracted_class = result.get("classification")
+        if extracted_class in ("Independent", "DSO"):
+            clinic["classification"] = extracted_class
+
+        # Notes / Extra intelligence
+        notes = result.get("extraction_notes")
+        if notes:
+            clinic["notes"] = notes
+
+    except Exception as e:
+        logger.warning("Gemini gap-filling extraction failed for %s: %s", clinic.get("name"), e)
+        if not clinic.get("head_dentist"):
+            clinic["head_dentist"] = ""
+            clinic["staff_source"] = "Not Found"
+
+
+def enrich_clinic(clinic: dict, gemini_key: str = "") -> dict:
+    """
+    Add email, email_source, head_dentist, staff_source, notes, classification to clinic.
+    Modifies the dict in-place and returns it.
+    """
+    name = clinic.get("name", "")
+    clinic["classification"] = classify_clinic(name)
+    website = clinic.get("website", "")
+
+    all_text = ""
+    email = ""
+    scrape_diagnostic = ""
+
+    if website:
+        all_text, email, scrape_diagnostic = _scrape_clinic_pages(website)
+
+    if email:
+        clinic["email"] = email
+        clinic["email_source"] = "Regex"
+    else:
+        clinic.setdefault("email", "")
+        clinic.setdefault("email_source", "Not Found")
+
+    clinic.setdefault("head_dentist", "")
+    clinic.setdefault("staff_source", "Not Found")
+    clinic.setdefault("notes", "")
+
+    if scrape_diagnostic:
+        # Kept in logs only — not written to clinic["notes"], which is a
+        # user-facing account field and shouldn't get filled with scraper
+        # diagnostics on every clinic that happens to have a thin website.
+        logger.info("Gap-filling diagnostic for %s: %s", name, scrape_diagnostic)
+
+    # Perform Gemini Gap-Filling & Lead Intelligence
+    if gemini_key:
+        _enrich_with_gemini(clinic, all_text, gemini_key)
+    elif not clinic.get("head_dentist") and all_text:
+        regex_result = _extract_dentist_regex(all_text)
+        if regex_result["name"]:
+            new_doc = (
+                f"{regex_result['name']}, {regex_result['credential']}"
+                if regex_result["credential"]
+                else regex_result["name"]
+            )
+            _merge_dentists(clinic, new_doc, "Regex")
+
+    return clinic

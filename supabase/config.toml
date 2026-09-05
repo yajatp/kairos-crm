@@ -1,0 +1,4 @@
+# SendBlue posts webhooks without a Supabase JWT, so the bot function must not
+# require one; the shared BOT_WEBHOOK_TOKEN query param is the auth instead.
+[functions.sendblue-bot]
+verify_jwt = false
