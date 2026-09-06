@@ -14,10 +14,10 @@ import re
 
 from rapidfuzz import fuzz
 
-# Starting default per Yajat, same spirit as the Donut Scraper's 0.85 IoU
+# Starting default per the product owner, same spirit as the Donut Scraper's 0.85 IoU
 # threshold: loose enough for "Sunshine Dentistry" vs "Sunshine Dental",
 # strict enough not to flag unrelated practices sharing a common word.
-# Flag to Yajat if it misbehaves in real usage — do not silently adjust.
+# Flag to the product owner if it misbehaves in real usage — do not silently adjust.
 NAME_SIMILARITY_THRESHOLD = 85
 
 _GENERIC_NAME_WORDS = re.compile(

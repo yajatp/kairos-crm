@@ -20,15 +20,15 @@ create table bot_pending_writes (
     created_at timestamptz not null default now()
 );
 
--- Yajat is not in the seeded users; the bot needs a users row per texter.
+-- Quinn is not in the seeded users; the bot needs a users row per texter.
 insert into users (name)
-select 'Yajat'
-where not exists (select 1 from users where name = 'Yajat');
+select 'Quinn'
+where not exists (select 1 from users where name = 'Quinn');
 
 -- The bot identifies who is texting by this number; anyone not listed is
 -- ignored. Fill in each person's real cell in E.164 before running.
--- update users set phone = '+1XXXXXXXXXX' where name = 'Tanush';
--- update users set phone = '+1XXXXXXXXXX' where name = 'Aditya';
--- update users set phone = '+1XXXXXXXXXX' where name = 'Sanjana';
--- update users set phone = '+1XXXXXXXXXX' where name = 'Adhira';
--- update users set phone = '+1XXXXXXXXXX' where name = 'Yajat';
+-- update users set phone = '+1XXXXXXXXXX' where name = 'Avery';
+-- update users set phone = '+1XXXXXXXXXX' where name = 'Jordan';
+-- update users set phone = '+1XXXXXXXXXX' where name = 'Riley';
+-- update users set phone = '+1XXXXXXXXXX' where name = 'Morgan';
+-- update users set phone = '+1XXXXXXXXXX' where name = 'Quinn';

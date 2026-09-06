@@ -263,7 +263,7 @@ left join lateral (
     limit 1
 ) la on true;
 
-insert into users (name) values ('Tanush'), ('Aditya'), ('Sanjana'), ('Adhira'), ('Yajat');
+insert into users (name) values ('Avery'), ('Jordan'), ('Riley'), ('Morgan'), ('Quinn');
 
 insert into channel_types (label) values
     ('Donut Visit'),

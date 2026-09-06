@@ -1,7 +1,7 @@
 # Kairos CRM — Feature Spec for Claude Code
 
 **Repo:** New repo, separate from `kairosleadgen` (see rationale in Section 1).
-**Status:** Ready to build. This spec is meant to be unambiguous enough that you should not need to ask Yajat clarifying questions before starting.
+**Status:** Ready to build. This spec is meant to be unambiguous enough that you should not need to ask the product owner clarifying questions before starting.
 **How to use this document:** If a `CLAUDE.md` exists in this new repo by the time you read this, that file's hard rules (style conventions, comment policy, etc.) apply on top of this spec. This document defines feature behavior; it does not replace repo-level style conventions.
 
 **Action required from you (Claude Code) before writing any code — see Section 9.** Two pieces of this spec (duplicate-detection logic, Google Sheet output structure) intentionally point you at the sibling `kairosleadgen` repo instead of re-specifying the logic here. Go read the actual code before building the equivalent CRM features. Do not guess at either.
@@ -10,7 +10,7 @@
 
 ## 1. Context — why this is a separate repo from `kairosleadgen`
 
-`kairosleadgen` (Donut Scraper + lead-gen scoring) is a "run occasionally, get output, walk away" tool — Yajat or Tanush kicks off a search, consumes a Google Sheet, done. This CRM is the opposite: Tanush, Aditya, Sanjana, and Adhira are expected to be in it constantly, logging every visit/call/email and checking the dashboard for overdue follow-ups. That's a different reliability bar — a broken experimental deploy on the scraper side should never be able to take down the system of record the team relies on to not drop leads. Separate repo, separate deploy, on purpose.
+`kairosleadgen` (Donut Scraper + lead-gen scoring) is a "run occasionally, get output, walk away" tool — a rep kicks off a search, consumes a Google Sheet, done. This CRM is the opposite: Avery, Jordan, Riley, and Morgan are expected to be in it constantly, logging every visit/call/email and checking the dashboard for overdue follow-ups. That's a different reliability bar — a broken experimental deploy on the scraper side should never be able to take down the system of record the team relies on to not drop leads. Separate repo, separate deploy, on purpose.
 
 This CRM is also relationally structured (accounts → contacts → activities, with filtering/sorting/search/duplicate-detection) rather than export-oriented like the scraper tools' Google Sheets output. It needs a real database from day one, not a Sheets writer.
 
@@ -22,13 +22,13 @@ This CRM is also relationally structured (accounts → contacts → activities, 
 
 - **Frontend:** Streamlit, same as the rest of Kairos's internal tooling — consistent with existing team tooling, fast to build, acceptable for this use case for the reason below.
 - **Backend/database:** Supabase (Postgres), via `supabase-py`. **This is a hard requirement, not a suggestion** — this CRM is a real system of record with relational data (accounts, contacts, activities) and needs actual query/filter/index capability that a flat file or Sheet cannot support at this record volume.
-- **Blocking dependency:** a new, dedicated Supabase project for this CRM, separate from whatever project the `kairosleadgen` migration eventually lands in. Yajat is getting this created by Tanush on the company Supabase account. **If this project doesn't exist yet when you start building, stop and flag it — do not build against a placeholder/local Postgres instance and hope to swap it later.** Connection details will be provided via `.env` / Streamlit secrets once the project exists.
+- **Blocking dependency:** a new, dedicated Supabase project for this CRM, separate from whatever project the `kairosleadgen` migration eventually lands in. The product owner is having this created on the company Supabase account. **If this project doesn't exist yet when you start building, stop and flag it — do not build against a placeholder/local Postgres instance and hope to swap it later.** Connection details will be provided via `.env` / Streamlit secrets once the project exists.
 
 ### Why Streamlit is acceptable here despite being a multi-user app
 
 Streamlit has no built-in cross-session state — two people on two devices are fully isolated `st.session_state` instances. That's fine here **only because Supabase is the single source of truth for every read and write**; nothing meaningful lives in `st.session_state` beyond ephemeral UI state (the currently-selected user, form-in-progress values, filter selections). Every list/dashboard view queries Supabase fresh. This avoids any actual state conflict between concurrent users — there's nothing to conflict, because nothing is cached across a meaningful window.
 
-The real limitation this creates: Streamlit will not proactively push Aditya's new activity log entry onto Tanush's already-open dashboard. Tanush has to trigger a rerun to see it. Do not try to build true push/websocket-based live sync — that's real engineering effort for a problem this team can tolerate. Instead:
+The real limitation this creates: Streamlit will not proactively push Jordan's new activity log entry onto Avery's already-open dashboard. Avery has to trigger a rerun to see it. Do not try to build true push/websocket-based live sync — that's real engineering effort for a problem this team can tolerate. Instead:
 - Add a manual "Refresh" button, prominent, on the Dashboard and Accounts pages.
 - Add a lightweight auto-refresh on the **Dashboard specifically** (e.g. `st_autorefresh` component or an equivalent rerun-on-timer, every 60 seconds) since that's the page where staleness matters most (due-today/overdue counts).
 - Do not add auto-refresh to the Accounts detail/edit pages — a rerun while someone is mid-edit of a form would blow away unsaved input. Only add it to read-only dashboard views.
@@ -37,27 +37,27 @@ The real limitation this creates: Streamlit will not proactively push Aditya's n
 
 ## 3. Explicit access model (no auth)
 
-**Decision, confirmed by Yajat: no password-based authentication.** This is an internal tool for four named people who fully trust each other and are meant to see each other's data. Do not build a login system, do not add Supabase Auth, do not add row-level security scoped per-user.
+**Decision, confirmed by the product owner: no password-based authentication.** This is an internal tool for four named people who fully trust each other and are meant to see each other's data. Do not build a login system, do not add Supabase Auth, do not add row-level security scoped per-user.
 
 **What to build instead — a user-select landing screen:**
-- On app load (or if no user is currently selected in `st.session_state`), show a simple screen with four buttons/tiles: **Tanush, Aditya, Sanjana, Adhira** (pulled from the `users` table — see Section 4 — not hardcoded, since it must be admin-editable).
+- On app load (or if no user is currently selected in `st.session_state`), show a simple screen with four buttons/tiles: **Avery, Jordan, Riley, Morgan** (pulled from the `users` table — see Section 4 — not hardcoded, since it must be admin-editable).
 - Selecting one sets `st.session_state['current_user']` for that browser session and proceeds to the app.
-- The selected user is used to **pre-fill** the "Kairos Owner" field on new accounts and new activity log entries. It is always editable/overridable per-entry — someone can log an activity on Sanjana's behalf if needed, no restriction.
+- The selected user is used to **pre-fill** the "Kairos Owner" field on new accounts and new activity log entries. It is always editable/overridable per-entry — someone can log an activity on Riley's behalf if needed, no restriction.
 - Provide a small persistent element (e.g. sidebar) showing "Acting as: [name]" with a way to switch users without reloading the whole app.
-- **This is a convenience default, not identity enforcement.** There is nothing stopping someone from selecting a different name than their own. That's an accepted tradeoff per Yajat's explicit call — don't over-engineer around it.
+- **This is a convenience default, not identity enforcement.** There is nothing stopping someone from selecting a different name than their own. That's an accepted tradeoff per the product owner's explicit call — don't over-engineer around it.
 
 ---
 
 ## 4. Admin-editable enums
 
-Two fields must be editable by the team without a code deploy, per Yajat's explicit instruction — implement as real tables, not hardcoded Python lists/enums:
+Two fields must be editable by the team without a code deploy, per the product owner's explicit instruction — implement as real tables, not hardcoded Python lists/enums:
 
 - **`users`** table: `id`, `name`, `active` (boolean). Used both for the landing-screen selector (Section 3) and the "Kairos Owner" dropdown throughout the app. Deactivating someone (rather than deleting) should remove them from the active picker/dropdown without breaking historical records that reference them.
 - **`channel_types`** table: `id`, `label`, `active` (boolean). Seed with the PDF's initial list (Donut Visit, Cold Visit, Apollo Cold Outreach, Conference, Referral, Other) but the team must be able to add/deactivate entries later.
 
 Build a simple admin/settings page in the app for managing both tables (add new, toggle active) — doesn't need to be fancy, just functional.
 
-**Everything else enumerated in the PDF (pipeline stages, activity types, lost reasons, current-tool list, demo status) stays as fixed application-level choices for v1** — Yajat did not ask for these to be admin-editable, and expanding every enum into an editable table is scope creep beyond what was requested. If the team wants one of these editable later, it's a small follow-up, not something to speculatively build now.
+**Everything else enumerated in the PDF (pipeline stages, activity types, lost reasons, current-tool list, demo status) stays as fixed application-level choices for v1** — the product owner did not ask for these to be admin-editable, and expanding every enum into an editable table is scope creep beyond what was requested. If the team wants one of these editable later, it's a small follow-up, not something to speculatively build now.
 
 ---
 
@@ -188,7 +188,7 @@ Auto-refresh this page every ~60 seconds (Section 2) plus a manual refresh butto
 
 ## 8. CSV import
 
-Per Yajat's explicit call: build the real column-mapping version, not a fixed-header shortcut, even though the source PDF called this "doesn't need to be perfect." Column mapping is the literal ask in the source spec and is meaningfully more usable — worth the extra build time.
+Per the product owner's explicit call: build the real column-mapping version, not a fixed-header shortcut, even though the source PDF called this "doesn't need to be perfect." Column mapping is the literal ask in the source spec and is meaningfully more usable — worth the extra build time.
 
 Flow:
 1. User uploads a CSV.
@@ -209,7 +209,7 @@ There is an existing duplicate-detection script in `kairosleadgen` used to preve
 **Important scope difference — do not port the logic as-is:** the `kairosleadgen` script dedupes **exact Google Place ID matches** within a single scraper run. This CRM's duplicate problem is different: comparing a newly typed or imported account against existing CRM rows, most of which have **no Place ID at all** (Apollo leads, conference contacts, referrals aren't sourced from Google Places). So reuse the *approach/pattern* where applicable, but the actual matching logic for this feature needs to be:
 
 - **Exact match (high confidence, always flag):** identical phone number, email, or website across accounts.
-- **Fuzzy match (flag for review, don't auto-block):** similar practice name **within the same city** — use a string-similarity library (e.g. `rapidfuzz`) with a starting threshold in a similar spirit to the 0.85 IoU threshold used for the Donut Scraper's tab-matching logic (same underlying philosophy: loose enough to catch near-duplicates like "Sunshine Dentistry" vs "Sunshine Dental," strict enough not to flag unrelated practices that happen to share a common word). Tune empirically; treat as a starting default per Yajat, not a firm requirement — flag to Yajat if it's producing obviously wrong results (too many false flags, or missing clear duplicates) rather than silently adjusting and moving on.
+- **Fuzzy match (flag for review, don't auto-block):** similar practice name **within the same city** — use a string-similarity library (e.g. `rapidfuzz`) with a starting threshold in a similar spirit to the 0.85 IoU threshold used for the Donut Scraper's tab-matching logic (same underlying philosophy: loose enough to catch near-duplicates like "Sunshine Dentistry" vs "Sunshine Dental," strict enough not to flag unrelated practices that happen to share a common word). Tune empirically; treat as a starting default per the product owner, not a firm requirement — flag to the product owner if it's producing obviously wrong results (too many false flags, or missing clear duplicates) rather than silently adjusting and moving on.
 - Applies both to manual account creation (check on save, before insert) and CSV import (Section 8).
 - Always **warn and let the user decide** — never silently block or silently merge. Show what it matched against so the user can judge.
 
@@ -225,7 +225,7 @@ Per the PDF: add, edit, delete, search, sort, filter on the Accounts list. Requi
 
 ## 11. Where things go in the repo
 
-New repo (name TBD by Yajat, e.g. `kairos-crm`). Suggested structure, adjust to match whatever conventions the sibling `kairosleadgen` repo uses for consistency across Kairos's internal tooling (check that repo's `CLAUDE.md` for house style — no emojis, comment conventions, etc. — and apply the same conventions here even though this is a separate repo):
+New repo (name TBD by the product owner, e.g. `kairos-crm`). Suggested structure, adjust to match whatever conventions the sibling `kairosleadgen` repo uses for consistency across Kairos's internal tooling (check that repo's `CLAUDE.md` for house style — no emojis, comment conventions, etc. — and apply the same conventions here even though this is a separate repo):
 
 - `app.py` — Streamlit entry point, `st.navigation([...])`
 - `pages/` — landing/user-select, dashboard, accounts (list + detail), contacts (nested under account detail), email_templates, admin/settings, csv_import
@@ -237,7 +237,7 @@ New repo (name TBD by Yajat, e.g. `kairos-crm`). Suggested structure, adjust to 
 ## 12. Open items — flag back rather than silently deciding
 
 - **Supabase project creation is a blocking dependency** — do not build against a placeholder and assume connection swap-in later will be trivial; confirm the project exists and get real credentials before considering this "done."
-- **Fuzzy-match threshold for name-based duplicate detection** (Section 9) is a starting default, not tuned — flag to Yajat after early real usage if it's producing bad results.
+- **Fuzzy-match threshold for name-based duplicate detection** (Section 9) is a starting default, not tuned — flag to the product owner after early real usage if it's producing bad results.
 - **Whether lost reasons / competitor-tool list should also become admin-editable** — not requested for v1 (Section 4), but likely to come up once the team actually uses this; small follow-up if/when asked.
 - **Eventual Donut Scraper / lead-gen → CRM pipe** — explicitly out of scope for this build (Section 1); don't build toward it speculatively, but don't make a data-model choice now that would make it hard later either (e.g. keeping `source_detail` as free text rather than something too rigid helps here).
 

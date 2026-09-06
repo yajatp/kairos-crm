@@ -23,7 +23,7 @@ def get_client() -> Client:
     if not url or not key:
         raise RuntimeError(
             "SUPABASE_URL / SUPABASE_KEY not configured. This CRM requires its "
-            "dedicated Supabase project (being created by Tanush) — set the "
+            "dedicated Supabase project (provisioned separately) — set the "
             "credentials in .env or Streamlit secrets and run schema.sql there "
             "first. Do not point this at the lead-gen project or a local Postgres."
         )

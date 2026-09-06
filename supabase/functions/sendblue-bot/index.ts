@@ -232,7 +232,7 @@ function tokenSortRatio(a: string, b: string): number {
 // first. Used to push back before the bot coins a near-duplicate (e.g. a new
 // "Follow-up text" activity type when "Text sent" already exists). 65 is a
 // starting default, like NAME_SIMILARITY_THRESHOLD in utils/dedup.py — not
-// tuned; flag to Yajat rather than silently adjusting if it misses or
+// tuned; flag to the product owner rather than silently adjusting if it misses or
 // over-triggers on real traffic.
 function topSimilar(candidate: string, options: string[], limit = 2): string[] {
   return options

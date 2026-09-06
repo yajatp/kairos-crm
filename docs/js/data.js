@@ -5,12 +5,12 @@
    ------------------------------------------------------------------ */
 
 const USERS = [
-  { id: 1, name: "Tanush", active: true },
-  { id: 2, name: "Aditya", active: true },
-  { id: 3, name: "Sanjana", active: true },
-  { id: 4, name: "Adhira", active: true },
-  { id: 5, name: "Yajat", active: true },
-  { id: 6, name: "Aneesh", active: true },
+  { id: 1, name: "Avery", active: true },
+  { id: 2, name: "Jordan", active: true },
+  { id: 3, name: "Riley", active: true },
+  { id: 4, name: "Morgan", active: true },
+  { id: 5, name: "Quinn", active: true },
+  { id: 6, name: "Elliot", active: true },
   { id: 7, name: "Tester", active: false },
 ];
 
@@ -368,7 +368,7 @@ const TEMPLATES = [
 
 const SCRAPE_RUNS = [
   { id: 1, run_name: "Frisco / Plano corridor — " + isoOffset(-1), location: "Frisco, TX",
-    total: 34, fresh: 31, reused: 3, promoted: 12, created_by: "Yajat", when: isoOffset(-1) + " at 4:12 PM CT", saved: true,
+    total: 34, fresh: 31, reused: 3, promoted: 12, created_by: "Quinn", when: isoOffset(-1) + " at 4:12 PM CT", saved: true,
     center: [33.1507, -96.8236],
     clinics: [
       { name: "Stonebriar Dental Excellence", addr: "2601 Preston Rd, Frisco, TX", rating: 4.8, reviews: 212, status: "Interested", lat: 33.1002, lng: -96.8067, phone: "(469) 555-0187" },
@@ -379,7 +379,7 @@ const SCRAPE_RUNS = [
       { name: "Willow Bend Dental Care", addr: "6101 Windhaven Pkwy, Plano, TX", rating: 4.5, reviews: 121, status: "Not Called", lat: 33.0603, lng: -96.8321, phone: "(972) 555-0279" },
     ] },
   { id: 2, run_name: "North Houston sweep — " + isoOffset(-4), location: "Houston, TX",
-    total: 73, fresh: 68, reused: 5, promoted: 9, created_by: "Tanush", when: isoOffset(-4) + " at 6:33 PM CT", saved: true,
+    total: 73, fresh: 68, reused: 5, promoted: 9, created_by: "Avery", when: isoOffset(-4) + " at 6:33 PM CT", saved: true,
     center: [29.9, -95.45],
     clinics: [
       { name: "Magnolia Park Dental", addr: "4410 Navigation Blvd, Houston, TX", rating: 4.3, reviews: 78, status: "Not Called", lat: 29.7519, lng: -95.3121, phone: "(281) 555-0134" },
@@ -388,7 +388,7 @@ const SCRAPE_RUNS = [
       { name: "Vintage Park Dental", addr: "10920 Louetta Rd, Houston, TX", rating: 4.9, reviews: 401, status: "Not Called", lat: 29.9912, lng: -95.5701, phone: "(832) 555-0344" },
     ] },
   { id: 3, run_name: "Austin pilot zone — " + isoOffset(-9), location: "Austin, TX",
-    total: 21, fresh: 21, reused: 0, promoted: 4, created_by: "Sanjana", when: isoOffset(-9) + " at 11:04 AM CT", saved: false,
+    total: 21, fresh: 21, reused: 0, promoted: 4, created_by: "Riley", when: isoOffset(-9) + " at 11:04 AM CT", saved: false,
     center: [30.30, -97.75],
     clinics: [
       { name: "Willow Creek Orthodontics", addr: "4200 S Lamar Blvd, Austin, TX", rating: 4.9, reviews: 356, status: "Interested", lat: 30.2358, lng: -97.7891, phone: "(512) 555-0190" },
