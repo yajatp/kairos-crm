@@ -152,7 +152,6 @@ function renderSidebar() {
 
   if (!state.user) {
     $("#sidebar").innerHTML = `
-      <div class="sidebar-top">${TOUR_BTN}</div>
       <nav class="nav" data-tour="nav">${nav}</nav>`;
     return;
   }
