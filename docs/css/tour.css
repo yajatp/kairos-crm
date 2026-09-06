@@ -69,13 +69,19 @@
 #tour-pop .tour-foot {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
-#tour-pop .dots { display: flex; gap: 5px; flex: 1; flex-wrap: wrap; }
+#tour-pop .dots {
+  display: flex;
+  gap: 4px;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;   /* one row, always: 15 dots must never spill */
+  min-width: 0;
+}
 #tour-pop .dots i {
-  width: 6px; height: 6px; border-radius: 50%;
-  background: #d7dbe3; display: block;
+  width: 5px; height: 5px; border-radius: 50%;
+  background: #d7dbe3; display: block; flex: none;
 }
 #tour-pop .dots i.on { background: var(--primary); }
 

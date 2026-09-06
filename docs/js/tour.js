@@ -15,12 +15,12 @@
     {
       sel: '[data-tour="dash-summary"]', place: "bottom",
       title: "The dashboard answers one question",
-      body: "<strong>What do I need to do today?</strong> Every account is bucketed into due today, overdue, stale, or upcoming — computed live in America/Chicago, because a follow-up that is “due today” has to mean the rep's today.",
+      body: "<strong>What do I need to do today?</strong> Every account is bucketed into due today, overdue, stale, or upcoming — computed live in America/Chicago, because a follow-up that is “due today” has to mean the rep's today.",
     },
     {
       sel: '[data-tour="dash-owner"]', place: "bottom",
       title: "Scoped to you by default",
-      body: "There is no login and no permissions model — deliberately. You pick a name on the way in, and it pre-fills the owner field everywhere without ever locking you out of another rep's records.",
+      body: "There is no login and no permissions model — deliberately. You pick a name on the way in, and it pre-fills the owner field everywhere without ever locking you out of another rep's records.",
     },
     {
       sel: '[data-tour="dash-overdue"]', place: "top",
@@ -47,7 +47,7 @@
       before: () => { state.page = "accounts"; },
       sel: '[data-tour="acct-filters"]', place: "bottom",
       title: "The account book",
-      body: "Free-text search plus owner, stage, channel, and city filters, with due-today and overdue toggles layered on top. Filters compose — this is how a rep builds a call list for an afternoon.",
+      body: "Free-text search plus owner, stage, channel, and city filters, with due-today and overdue toggles layered on top. Filters compose — this is how a rep builds a call list for an afternoon.",
     },
     {
       before: () => { state.accountId = 1; state.backTo = "accounts"; state.page = "account"; state.acctTab = "Details"; },
@@ -59,7 +59,7 @@
       before: () => { state.acctTab = "Activity Log"; },
       sel: '[data-tour="acct-log"]', place: "top",
       title: "Activity drives everything else",
-      body: "This is the only place state changes. Logging an activity sets the account's next action through a Postgres trigger, so the row and its parent can never disagree. <strong>Try it</strong> — type a summary and a next action, then press Log.",
+      body: "This is the only place state changes. Logging an activity sets the account's next action through a Postgres trigger, so the row and its parent can never disagree. <strong>Try it</strong> — type a summary and a next action, then press Log.",
     },
     {
       before: () => { state.page = "donut"; state.donutTab = "scrape"; },
@@ -76,19 +76,19 @@
     {
       before: () => { state.page = "csv"; state.csvStep = 1; },
       sel: '[data-tour="csv-dupes"]', place: "top",
-      title: "Duplicates warn — they never decide",
+      title: "Duplicates warn — they never decide",
       body: "Bulk import runs fuzzy matching on names and exact matching on phones, then <strong>stops and asks</strong>. Silently skipping or auto-merging a row is how a CRM quietly loses a deal, so the app refuses to do either.",
     },
     {
       before: () => { state.page = "dashboard"; },
       sel: '[data-tour="bot"]', place: "right",
       title: "And it works over text message",
-      body: "The same CRM is reachable by SMS through a SendBlue number and a Supabase edge function. Reps text it from a parking lot — “log a call for Cedar Ridge, left a voicemail” — and it writes the activity and sets the next action. <strong>Try the box below.</strong>",
+      body: "The same CRM is reachable by SMS through a SendBlue number and a Supabase edge function. Reps text it from a parking lot — “log a call for Cedar Ridge, left a voicemail” — and it writes the activity and sets the next action. <strong>Try the box below.</strong>",
     },
     {
       sel: null,
       title: "That's the tour",
-      body: "Everything here is fictional data running client-side. The real build is Streamlit and Supabase, and the full source — schema, triggers, scraper pipeline, and edge function — is in the repository this demo ships from.",
+      body: "Everything here is fictional data running client-side. The real build is Streamlit and Supabase, and the full source (schema, triggers, scraper pipeline and edge function) is in the repository this demo ships from.",
       final: true,
     },
   ];
@@ -193,10 +193,9 @@
       <p>${step.body}</p>
       <div class="tour-foot">
         <div class="dots">${STEPS.map((_, n) => `<i class="${n <= i ? "on" : ""}"></i>`).join("")}</div>
-        <button class="ghost" data-tour-act="end">${step.final ? "Close" : "Skip"}</button>
+        ${step.final ? "" : `<button class="ghost" data-tour-act="end">Skip</button>`}
         ${i > 0 ? `<button data-tour-act="prev">Back</button>` : ""}
-        ${step.final ? `<button class="primary" data-tour-act="end">Explore on my own</button>`
-                     : `<button class="primary" data-tour-act="next">Next</button>`}
+        <button class="primary" data-tour-act="${step.final ? "end" : "next"}">${step.final ? "Done" : "Next"}</button>
       </div>`;
 
     scrollTo(step);
