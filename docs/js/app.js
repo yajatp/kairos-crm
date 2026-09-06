@@ -143,14 +143,17 @@ const NAV = [
   ["settings", "Settings", "settings"],
 ];
 
+const TOUR_BTN = `<button class="btn tour-launch" data-act="start-tour">${icon("help", 14)} Take the tour</button>`;
+
 function renderSidebar() {
   const nav = NAV.map(([id, label, ic]) =>
     `<a data-nav="${id}" class="${state.page === id || (id === "accounts" && state.page === "account") ? "active" : ""}">${icon(ic)}${esc(label)}</a>`
   ).join("");
 
   if (!state.user) {
-    $("#sidebar").innerHTML = `<div style="height:16px"></div><nav class="nav" data-tour="nav">${nav}</nav>
-      <button class="btn tour-launch" data-act="start-tour">${icon("help", 16)} Take the tour</button>`;
+    $("#sidebar").innerHTML = `
+      <div class="sidebar-top">${TOUR_BTN}</div>
+      <nav class="nav" data-tour="nav">${nav}</nav>`;
     return;
   }
 
@@ -163,7 +166,10 @@ function renderSidebar() {
   }).join("");
 
   $("#sidebar").innerHTML = `
-    <div class="sidebar-user">${icon("person", 16)} Logged in as ${esc(state.user.name)}</div>
+    <div class="sidebar-user">
+      <span class="who">${icon("person", 16)} Logged in as ${esc(state.user.name)}</span>
+      ${TOUR_BTN}
+    </div>
     <nav class="nav" data-tour="nav">${nav}</nav>
     <div class="chat-panel" data-tour="bot">
       <div class="chat-controls">
@@ -176,8 +182,7 @@ function renderSidebar() {
         <input id="chatinput" placeholder="Message Kairos Bot..." autocomplete="off">
         <button type="submit">${icon("send", 16)}</button>
       </form>
-    </div>
-    <button class="btn tour-launch" data-act="start-tour">${icon("help", 16)} Take the tour</button>`;
+    </div>`;
 
   $("#chatlog").scrollTop = $("#chatlog").scrollHeight;
 }
