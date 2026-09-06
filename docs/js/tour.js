@@ -114,56 +114,70 @@
     };
   }
 
+  /* Position the popover in VIEWPORT coordinates, then convert to document
+     coordinates. Working in viewport space is what makes clamping correct:
+     the popover must always sit fully inside the visible window, whatever
+     the target's size or the window's. */
   function place(step) {
-    const pad = 6;
+    const pad = 6, gap = 18, edge = 16;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const pw = pop.offsetWidth, ph = pop.offsetHeight;
     const r = rectOf(step.sel);
 
     if (!r) {
-      spot.style.cssText = "position:absolute;z-index:9998;border-radius:10px;box-shadow:0 0 0 9999px rgba(15,23,42,.58);pointer-events:none;";
-      spot.style.top = `${window.scrollY + window.innerHeight / 2}px`;
-      spot.style.left = `${window.innerWidth / 2}px`;
-      spot.style.width = "0px"; spot.style.height = "0px";
-      pop.style.top = `${window.scrollY + window.innerHeight / 2 - pop.offsetHeight / 2}px`;
-      pop.style.left = `${window.innerWidth / 2 - pop.offsetWidth / 2}px`;
+      spot.style.top = `${window.scrollY + vh / 2}px`;
+      spot.style.left = `${vw / 2}px`;
+      spot.style.width = "0px";
+      spot.style.height = "0px";
+      pop.style.top = `${window.scrollY + Math.max(edge, (vh - ph) / 2)}px`;
+      pop.style.left = `${Math.max(edge, (vw - pw) / 2)}px`;
       return;
     }
+
+    // A section taller than the window gets its top highlighted rather than
+    // the whole thing, so there is always somewhere for the popover to go.
+    const effH = Math.min(r.viewHeight, Math.round(vh * 0.55));
 
     spot.style.top = `${r.top - pad}px`;
     spot.style.left = `${r.left - pad}px`;
     spot.style.width = `${r.width + pad * 2}px`;
-    spot.style.height = `${r.height + pad * 2}px`;
+    spot.style.height = `${effH + pad * 2}px`;
 
-    const pw = pop.offsetWidth, ph = pop.offsetHeight, gap = 18;
-    let top, left, placement = step.place || "bottom";
+    const vt = r.viewTop;
+    const vb = vt + effH;
+    const vl = r.left - window.scrollX;
+    const vr = vl + r.width;
 
-    // flip if there is not enough room in the viewport
-    if (placement === "bottom" && r.viewTop + r.viewHeight + gap + ph > window.innerHeight) placement = "top";
-    if (placement === "top" && r.viewTop - gap - ph < 0) placement = "bottom";
+    const room = { bottom: vh - vb - gap, top: vt - gap, right: vw - vr - gap, left: vl - gap };
+    const fits = (pl) => (pl === "bottom" || pl === "top") ? room[pl] >= ph : room[pl] >= pw;
 
+    let placement = step.place || "bottom";
+    if (!fits(placement)) placement = ["bottom", "top", "right", "left"].find(fits) || placement;
+
+    let top, left;
     if (placement === "right") {
-      left = r.left + r.width + gap;
-      top = r.top + r.height / 2 - ph / 2;
+      left = vr + gap; top = vt + effH / 2 - ph / 2;
     } else if (placement === "left") {
-      left = r.left - pw - gap;
-      top = r.top + r.height / 2 - ph / 2;
+      left = vl - pw - gap; top = vt + effH / 2 - ph / 2;
     } else if (placement === "top") {
-      left = r.left + r.width / 2 - pw / 2;
-      top = r.top - ph - gap;
+      left = vl + r.width / 2 - pw / 2; top = vt - ph - gap;
     } else {
-      left = r.left + r.width / 2 - pw / 2;
-      top = r.top + r.height + gap;
+      left = vl + r.width / 2 - pw / 2; top = vb + gap;
     }
 
-    left = Math.max(16, Math.min(left, window.innerWidth - pw - 16));
-    top = Math.max(window.scrollY + 16, top);
-    pop.style.top = `${top}px`;
-    pop.style.left = `${left}px`;
+    left = Math.min(Math.max(left, edge), Math.max(edge, vw - pw - edge));
+    top = Math.min(Math.max(top, edge), Math.max(edge, vh - ph - edge));
+
+    pop.style.top = `${top + window.scrollY}px`;
+    pop.style.left = `${left + window.scrollX}px`;
   }
 
   function scrollTo(step) {
     const r = rectOf(step.sel);
     if (!r) return;
-    const target = r.top - Math.max(120, (window.innerHeight - r.height) / 2);
+    const vh = window.innerHeight;
+    // Tall sections scroll to their top; everything else centres.
+    const target = r.height > vh * 0.55 ? r.top - 110 : r.top - (vh - r.height) / 2;
     window.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
   }
 
@@ -186,9 +200,10 @@
       </div>`;
 
     scrollTo(step);
-    // let the smooth scroll and any layout settle before measuring
+    // reposition as the smooth scroll runs, and once more after it settles
     requestAnimationFrame(() => place(step));
     setTimeout(() => place(step), 340);
+    setTimeout(() => place(step), 700);
   }
 
   function start(from = 0) {
