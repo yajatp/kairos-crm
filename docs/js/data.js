@@ -423,3 +423,29 @@ const STAGE_COLORS = {
   "Closed Lost":         { bg: "#fee2e2", fg: "#dc2626" },
   "Nurture Later":       { bg: "#e0e7ff", fg: "#4f46e5" },
 };
+
+/* ---------------- call-status palette (donut run checklists) ---------------- */
+
+const CALL_STATUS_COLORS = {
+  "Not Called":      { bg: "#f1f5f9", fg: "#475569" },
+  "No Answer":       { bg: "#fef3c7", fg: "#92400e" },
+  "Left Voicemail":  { bg: "#e0e7ff", fg: "#4338ca" },
+  "Call Back Later": { bg: "#ffedd5", fg: "#c2410c" },
+  "Interested":      { bg: "#dcfce7", fg: "#15803d" },
+  "Not Interested":  { bg: "#fee2e2", fg: "#b91c1c" },
+  "Dead":            { bg: "#e2e8f0", fg: "#334155" },
+};
+
+/* Clinics a fresh scrape can turn up, so "Run scrape" produces a real run. */
+const CLINIC_POOL = [
+  ["Ashwood Dental Studio", "1204 Ashwood Ln"], ["Brightleaf Family Dentistry", "88 Brightleaf Rd"],
+  ["Canyon Oaks Dental", "5510 Canyon Oaks Blvd"], ["Dover Park Dentistry", "710 Dover Park Dr"],
+  ["Emberly Smile Care", "3345 Emberly Way"], ["Foxglove Dental Group", "9021 Foxglove St"],
+  ["Granite Hill Dental", "417 Granite Hill Ave"], ["Hollowbrook Dentistry", "2680 Hollowbrook Pkwy"],
+  ["Ironwood Dental Arts", "1533 Ironwood Trl"], ["Juniper Ridge Dental", "6104 Juniper Ridge Dr"],
+  ["Kestrel Lane Dentistry", "228 Kestrel Ln"], ["Larkspur Dental Care", "7742 Larkspur Blvd"],
+  ["Marigold Family Dental", "310 Marigold Ct"], ["Northfield Smile Studio", "4460 Northfield Rd"],
+  ["Orchard Gate Dentistry", "1890 Orchard Gate Dr"], ["Pinecrest Dental Partners", "5027 Pinecrest Ave"],
+];
+
+const CALL_STATUS_SEED = ["Not Called", "Not Called", "No Answer", "Left Voicemail", "Not Called", "Call Back Later"];

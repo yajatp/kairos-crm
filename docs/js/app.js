@@ -13,6 +13,9 @@ const state = {
   dashOwner: null,
   filters: { q: "", owner: null, stage: "All", channel: "All", city: "", dueToday: false, overdue: false, sort: "Practice name" },
   templateFilter: "All",
+  flash: null,
+  scrapeError: null,
+  polygon: null,
   csvStep: 0,
   chat: JSON.parse(JSON.stringify(BOT_THREADS)),
   chatThread: "Texts",
@@ -31,6 +34,11 @@ const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 function userName(id) {
   const u = USERS.find((x) => x.id === id);
   return u ? u.name : "—";
+}
+
+function callBadge(status) {
+  const c = CALL_STATUS_COLORS[status] || { bg: "#e2e8f0", fg: "#1e293b" };
+  return `<span class="badge" style="background:${c.bg};color:${c.fg}">${esc(status)}</span>`;
 }
 
 function badge(stage) {
@@ -71,6 +79,7 @@ const ICONS = {
   delete: '<path d="M6 7h12v13a2 2 0 01-2 2H8a2 2 0 01-2-2V7zm3-4h6l1 2h4v2H4V5h4l1-2z"/>',
   enroll: '<path d="M3 5h12v2H3zm0 4h12v2H3zm0 4h8v2H3zm14-4h2v3h3v2h-3v3h-2v-3h-3v-2h3z"/>',
   send: '<path d="M2 21l21-9L2 3v7l15 2-15 2z"/>',
+  help: '<path d="M12 2a10 10 0 100 20 10 10 0 000-20zm1 17h-2v-2h2v2zm2.1-7.7l-.9.9c-.7.7-1.2 1.3-1.2 2.8h-2v-.5c0-1.1.5-2.1 1.2-2.8l1.2-1.2c.4-.4.6-.9.6-1.5a2 2 0 10-4 0H8a4 4 0 118 0c0 .9-.4 1.6-.9 2.3z"/>',
 };
 
 function icon(name, size = 18) {
@@ -140,7 +149,8 @@ function renderSidebar() {
   ).join("");
 
   if (!state.user) {
-    $("#sidebar").innerHTML = `<div style="height:16px"></div><nav class="nav" data-tour="nav">${nav}</nav>`;
+    $("#sidebar").innerHTML = `<div style="height:16px"></div><nav class="nav" data-tour="nav">${nav}</nav>
+      <button class="btn tour-launch" data-act="start-tour">${icon("help", 16)} Take the tour</button>`;
     return;
   }
 
@@ -166,7 +176,8 @@ function renderSidebar() {
         <input id="chatinput" placeholder="Message Kairos Bot..." autocomplete="off">
         <button type="submit">${icon("send", 16)}</button>
       </form>
-    </div>`;
+    </div>
+    <button class="btn tour-launch" data-act="start-tour">${icon("help", 16)} Take the tour</button>`;
 
   $("#chatlog").scrollTop = $("#chatlog").scrollHeight;
 }
@@ -353,10 +364,9 @@ function pageAccounts() {
     ${title("Accounts")}
     <button class="btn full" style="margin-bottom:16px;justify-content:flex-start">${icon("add")} Add account</button>
 
-    <div class="expander" data-tour="acct-filters" open>
-      <details open>
-        <summary>${icon("filter")} Filters and search</summary>
-        <div class="expander-body">
+    <details class="expander" data-tour="acct-filters" open>
+      <summary>${icon("filter")} Filters and search</summary>
+      <div class="expander-body">
           <div class="grid c5">
             <div class="field"><label>Search practice name</label><input id="fq" value="${esc(f.q)}"></div>
             <div class="field"><label>Kairos owner</label><select id="fowner">${ownerOpts}</select></div>
@@ -370,11 +380,10 @@ function pageAccounts() {
             <label class="checkline"><input type="checkbox" disabled> In cadence</label>
             <label class="checkline"><input type="checkbox" disabled> No activity in X+ days</label>
           </div>
-          <div class="field" style="max-width:50%"><label>Sort by</label>
-            <select id="fsort">${sel(["Practice name", "Due date", "Last action"], f.sort)}</select></div>
-        </div>
-      </details>
-    </div>
+        <div class="field" style="max-width:50%"><label>Sort by</label>
+          <select id="fsort">${sel(["Practice name", "Due date", "Last action"], f.sort)}</select></div>
+      </div>
+    </details>
 
     <p class="st-caption">${list.length} accounts</p>
     <div data-tour="acct-list">${listRows(list, { extraCity: true })}</div>`;
@@ -439,7 +448,10 @@ function acctTabBody(a) {
           <div class="field"><label>Pipeline stage</label><select>${sel(PIPELINE_STAGES, a.pipeline_stage)}</select></div>
           <div class="field"><label>Practice size (operatories)</label><input value="${esc(a.practice_size)}"></div>
           <div class="field"><label>Competitor tool</label><select>${sel(COMPETITOR_TOOLS, a.competitor_tool)}</select></div>
-          <div class="field"><label>Lost reason</label><select>${sel([""].concat(LOST_REASONS), a.lost_reason)}</select></div>
+          <div class="field"><label>Lost reason</label><select>
+            <option value="" ${a.lost_reason ? "" : "selected"}>—</option>
+            ${LOST_REASONS.map((r) => `<option ${r === a.lost_reason ? "selected" : ""}>${esc(r)}</option>`).join("")}
+          </select></div>
         </div>
         <div class="field"><label>Notes</label><textarea placeholder="Anything that does not fit a field above">${esc(a.notes)}</textarea></div>
         <button class="btn primary">${icon("save")} Save</button>
@@ -557,10 +569,11 @@ function pageDonut() {
       <div id="map"></div>
       <p class="st-caption" id="drawHint" style="margin-top:8px">Pick the polygon tool at the top left, click to drop vertices, then double-click to close the shape.</p>
       <div class="field" style="margin-top:16px"><input placeholder="Jump to a city or ZIP — e.g. Plano, TX or 75024"></div>
+      ${state.scrapeError ? `<div class="st-alert warn">${esc(state.scrapeError)}</div>` : ""}
       <div class="panel" data-tour="donut-params">
         <div class="grid c2">
           <div class="field" style="margin:0"><label style="text-transform:uppercase;font-size:11px;letter-spacing:.6px;font-weight:700;color:#64748b">Area label (optional)</label>
-            <input placeholder="e.g. Prosper test zone"></div>
+            <input id="areaLabel" placeholder="e.g. Prosper test zone"></div>
           <div class="field" style="margin:0"><label style="text-transform:uppercase;font-size:11px;letter-spacing:.6px;font-weight:700;color:#64748b">Buffer distance (miles)</label>
             <input value="0.5"><p class="st-caption" style="margin-top:6px">0.5 mi buffer around polygon</p></div>
         </div>
@@ -589,11 +602,13 @@ function pageDonut() {
     </div>`).join("");
 
   return `${title("Donut Scraper")}${tabBar}
-    <div class="page-head"><h2 class="st-subheader" style="flex:1">All Scrape Runs <span class="live">${icon("refresh", 14)} Live sync active (30s)</span></h2></div>
+    <div class="page-head"><h2 class="st-subheader" style="flex:1">All Scrape Runs <span class="live">${icon("refresh", 14)} Live sync active (30s)</span></h2>
+      <button class="btn" data-act="refresh">${icon("refresh")} Refresh</button></div>
+    ${state.flash ? `<div class="st-alert success">${state.flash}</div>` : ""}
     <div class="key-line"><strong>KEY:</strong>
-      <span><span class="swatch" style="background:#eff6ff;border:1px solid #bfdbfe"></span>Unsaved Scrape</span>
-      <span><span class="swatch" style="background:#f0fdf4;border:1px solid #bbf7d0"></span>Saved to CRM</span>
-      <span><span class="swatch" style="background:#f1f5f9;border:1px solid #e2e8f0"></span>Archived</span>
+      <span><span class="swatch" style="background:#dbeafe;border-color:#60a5fa"></span>Unsaved Scrape</span>
+      <span><span class="swatch" style="background:#dcfce7;border-color:#4ade80"></span>Saved to CRM</span>
+      <span><span class="swatch" style="background:#e2e8f0;border-color:#94a3b8"></span>Archived</span>
     </div>
     <div data-tour="donut-runs">${runs}</div>`;
 }
@@ -604,9 +619,8 @@ function pageRunDetail(runId) {
     <div class="row ${i % 2 === 0 ? "even" : ""}" style="grid-template-columns:3fr 3fr 1.4fr 2fr 1.4fr">
       <div class="name">${esc(c.name)}</div>
       <div>${esc(c.addr)}</div>
-      <div>${c.rating} ★ <span class="muted">(${c.reviews})</span></div>
-      <div>${badge(c.status === "Interested" ? "Interested" : c.status === "Not Called" ? "New Lead" : "Contacted")}
-        <span class="muted" style="font-size:12px"> ${esc(c.status)}</span></div>
+      <div>${c.rating} <span style="color:#f59e0b">★</span> <span class="muted">(${c.reviews})</span></div>
+      <div>${callBadge(c.status)}</div>
       <div><button class="btn sm full">Promote</button></div>
     </div>`).join("");
 
@@ -780,8 +794,24 @@ function render() {
   else p.innerHTML = (map[state.page] || pageDashboard)();
 
   if (state.page === "donut" && state.donutTab === "scrape") initMap();
+  autosize();
+  state.flash = null;
   window.scrollTo({ top: 0 });
 }
+
+function autosize() {
+  $$("textarea").forEach((t) => {
+    t.style.height = "auto";
+    t.style.height = `${Math.max(t.scrollHeight, 90)}px`;
+  });
+}
+
+document.addEventListener("input", (e) => {
+  if (e.target.tagName === "TEXTAREA") {
+    e.target.style.height = "auto";
+    e.target.style.height = `${Math.max(e.target.scrollHeight, 90)}px`;
+  }
+});
 
 function initMap() {
   const node = $("#map");
@@ -831,6 +861,7 @@ function initMap() {
     shape = L.polygon(pts, { color: "#3abdaf", weight: 3, fillOpacity: 0.15, interactive: false }).addTo(m);
     m.fitBounds(shape.getBounds(), { padding: [40, 40] });
     state.polygon = pts.slice();
+    state.scrapeError = null;
     drawing = false;
     node.style.cursor = "";
     const hint = $("#drawHint");
@@ -894,10 +925,43 @@ document.addEventListener("click", (e) => {
     case "back-donut": state.page = "donut"; state.donutTab = "runs"; render(); break;
     case "csv-demo": state.csvStep = 1; render(); break;
     case "start-tour": if (window.Tour) window.Tour.start(); break;
-    case "run-scrape":
+    case "run-scrape": {
+      if (!state.polygon) {
+        state.scrapeError = "Draw a polygon first — pick the polygon tool on the map, click to drop vertices, then double-click to close it.";
+        render();
+        break;
+      }
+      const label = ($("#areaLabel") || {}).value?.trim();
+      const lat = state.polygon.reduce((t, p) => t + p[0], 0) / state.polygon.length;
+      const lng = state.polygon.reduce((t, p) => t + p[1], 0) / state.polygon.length;
+      const n = 4 + Math.floor(Math.random() * 4);
+      const pool = CLINIC_POOL.slice().sort(() => Math.random() - 0.5).slice(0, n);
+      const reused = Math.floor(Math.random() * 3);
+      const clinics = pool.map(([name, addr], k) => ({
+        name, addr: label ? `${addr}, ${label}` : addr,
+        rating: Number((4.1 + Math.random() * 0.8).toFixed(1)),
+        reviews: 40 + Math.floor(Math.random() * 300),
+        status: CALL_STATUS_SEED[k % CALL_STATUS_SEED.length],
+        lat: lat + (Math.random() - 0.5) * 0.08,
+        lng: lng + (Math.random() - 0.5) * 0.08,
+        phone: "(555) 555-0" + String(100 + k),
+      }));
+      SCRAPE_RUNS.unshift({
+        id: Date.now(),
+        run_name: `${label || "Custom area"} — ${centralToday()}`,
+        location: label || `${lat.toFixed(3)}, ${lng.toFixed(3)} · ${state.polygon.length} vertices`,
+        total: clinics.length + reused, fresh: clinics.length, reused,
+        promoted: 0, created_by: state.user.name,
+        when: `${centralToday()} at ${new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} CT`,
+        saved: false, center: [lat, lng], clinics,
+      });
+      state.polygon = null;
+      state.scrapeError = null;
+      state.flash = `Scrape complete — ${clinics.length + reused} clinics found inside the polygon, ${clinics.length} new after de-duplication. Open the run to work the call list.`;
       state.donutTab = "runs";
       render();
       break;
+    }
     case "log-activity": {
       const a = ACCOUNTS.find((x) => x.id === state.accountId);
       const summary = $("#actSummary").value.trim();

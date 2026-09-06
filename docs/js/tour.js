@@ -94,22 +94,13 @@
   ];
 
   let i = 0, active = false;
-  let spot, pop, fab;
+  let spot, pop;
 
   function ensureNodes() {
     if (spot) return;
     spot = document.createElement("div"); spot.id = "tour-spot";
     pop = document.createElement("div"); pop.id = "tour-pop";
     document.body.append(spot, pop);
-  }
-
-  function showFab() {
-    if (fab) { fab.classList.remove("hidden"); return; }
-    fab = document.createElement("button");
-    fab.id = "tour-fab";
-    fab.textContent = "Take the tour";
-    fab.onclick = () => start();
-    document.body.append(fab);
   }
 
   function rectOf(sel) {
@@ -203,7 +194,6 @@
   function start(from = 0) {
     active = true; i = from;
     document.body.classList.add("tour-open");
-    if (fab) fab.classList.add("hidden");
     ensureNodes();
     spot.style.display = pop.style.display = "";
     draw();
@@ -213,7 +203,6 @@
     active = false;
     document.body.classList.remove("tour-open");
     if (spot) spot.style.display = pop.style.display = "none";
-    showFab();
   }
 
   document.addEventListener("click", (e) => {
@@ -237,10 +226,9 @@
 
   window.Tour = { start, end };
 
-  // First-time visitors get the tour automatically; afterwards, the pill.
-  if (localStorage.getItem("kairos-tour-seen")) {
-    showFab();
-  } else {
+  // First-time visitors get the tour automatically; afterwards it is on
+  // the sidebar button, which never sits on top of the page content.
+  if (!localStorage.getItem("kairos-tour-seen")) {
     try { localStorage.setItem("kairos-tour-seen", "1"); } catch (_) {}
     setTimeout(() => start(), 700);
   }
